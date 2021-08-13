@@ -1,12 +1,34 @@
-#!/bin/bash
-
-set -e
-
-# Create an admin user
-FLASK_APP=superset flask fab create-admin $@
-
-# Initialize the database
-superset db upgrade
-
-# Create default roles and permissions
-superset init
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+  creationTimestamp: "2020-10-30T20:10:39Z"
+  generation: 1
+  labels:
+    app: superset
+  name: superset
+spec:
+  rules:
+  - host: dsi-presto-analytics.optum.com
+    http:
+      paths:
+      - backend:
+          serviceName: superset
+          servicePort: http
+        path: /
+  - host: dsi-presto-analytics-druid.optum.com
+    http:
+      paths:
+      - backend:
+          serviceName: druidv20-router
+          servicePort: 8888
+        path: /
+  tls:
+      - hosts:
+          - dsi-presto-analytics.optum.com
+        secretName: dsi-presto-analytics-optum-com
+      - hosts:
+          - dsi-presto-analytics-druid.optum.com
+        secretName: dsi-presto-analytics-optum-com
+status:
+  loadBalancer: {}
