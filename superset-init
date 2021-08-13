@@ -1,37 +1,13 @@
-initFile: |-
-  if [ "$1" == "development-mode" ]; then
-    FLASK_APP="superset.app:create_app()"
-    PYTHONPATH=/var/lib/superset:$PYTHONPATH
-    SUPERSET_HOME="/var/lib/superset" 
-    cp /home/superset/superset_config.py $SUPERSET_HOME
-    echo "dbfilename dump.rdb" >/$SUPERSET_HOME/redis.conf
-    echo "dir /var/lib/superset" >>/$SUPERSET_HOME/redis.conf
-    redis-server /$SUPERSET_HOME/redis.conf &
-     echo "Upgrading DB schema..."
-    superset db upgrade
-    echo "Initializing roles..."
-    superset init
-    echo "Creating admin user..."
-    superset fab create-admin \
-                    --username mprior10 \
-                      --firstname Mike \
-                      --lastname Prior \
-                      --email mike.prior@optum.com \
-                      --password F1ghtClub || true
-    #gunicorn -w 3 -k gevent --timeout 360 -b  0.0.0.0:8088 --limit-request-line 0 --limit-request-field_size 0 "superset.app:create_app()"
-     sleep infinity
-  elif [ "$1" == "production-mode" ]; then
-    FLASK_APP="superset.app:create_app()"
-    PYTHONPATH=/var/lib/superset:$PYTHONPATH
-    SUPERSET_HOME="/var/lib/superset" 
-    cp /home/superset/superset_config.py $SUPERSET_HOME
-    echo "dbfilename dump.rdb" >/$SUPERSET_HOME/redis.conf
-    echo "dir /var/lib/superset" >>/$SUPERSET_HOME/redis.conf
-    redis-server /$SUPERSET_HOME/redis.conf &
-    gunicorn -w 3 -k gevent --timeout 360 -b  0.0.0.0:8088 --limit-request-line 0 --limit-request-field_size 0 "superset.app:create_app()"
-    #sleep infinity
-  else
-    echo "You need to specify which mode to start in by setting production-mode"
-    echo "or development-mode in extraArguments."
-    exit 1
-  fi
+version: '2.2'
+services:
+    postgres:
+        image: postgres:11.5
+        container_name: dsi-presto-analytics-meta
+        environment:
+            - POSTGRES_USER=superset
+            - POSTGRES_PASSWORD=dubl1n
+            - POSTGRES_DB=superset
+        volumes:
+            - /app/vols/dsi-presto-analytics-meta:/var/lib/postgresql/data       # <-- maps postgres data storage area to persistent filesystem
+        ports:
+            - "5434:5432"
