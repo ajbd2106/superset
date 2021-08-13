@@ -1,6 +1,246 @@
-pyldap
-pymssql
-pyodbc
-mysqlclient
-pymysql
-mysql-connector-python
+# Default values for superset.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+replicaCount: 2
+
+## Set default image, imageTag, and imagePullPolicy.
+image:
+  repository: docker.repo1.uhc.com/dsi-pide/presto-analytics
+  tag: 1.0.1
+  pullPolicy: "IfNotPresent"
+  pullSecrets: []
+
+initFile: |-
+  if [ "$1" == "development-mode" ]; then
+    FLASK_APP="superset.app:create_app()"
+    PYTHONPATH=/var/lib/superset:$PYTHONPATH
+    SUPERSET_HOME="/var/lib/superset" 
+    cp /home/superset/superset_config.py $SUPERSET_HOME
+    echo "dbfilename dump.rdb" >/$SUPERSET_HOME/redis.conf
+    echo "dir /var/lib/superset" >>/$SUPERSET_HOME/redis.conf
+    redis-server /$SUPERSET_HOME/redis.conf &
+     echo "Upgrading DB schema..."
+    superset db upgrade
+    echo "Initializing roles..."
+    superset init
+    echo "Creating admin user..."
+    superset fab create-admin \
+                    --username mprior10 \
+                      --firstname Mike \
+                      --lastname Prior \
+                      --email mike.prior@optum.com \
+                      --password F1ghtClub || true
+    #gunicorn -w 3 -k gevent --timeout 360 -b  0.0.0.0:8088 --limit-request-line 0 --limit-request-field_size 0 "superset.app:create_app()"
+     sleep infinity
+  elif [ "$1" == "production-mode" ]; then
+    FLASK_APP="superset.app:create_app()"
+    PYTHONPATH=/var/lib/superset:$PYTHONPATH
+    SUPERSET_HOME="/var/lib/superset" 
+    cp /home/superset/superset_config.py $SUPERSET_HOME
+    echo "dbfilename dump.rdb" >/$SUPERSET_HOME/redis.conf
+    echo "dir /var/lib/superset" >>/$SUPERSET_HOME/redis.conf
+    redis-server /$SUPERSET_HOME/redis.conf &
+    gunicorn -w 3 -k gevent --timeout 360 -b  0.0.0.0:8088 --limit-request-line 0 --limit-request-field_size 0 "superset.app:create_app()"
+    #sleep infinity
+  else
+    echo "You need to specify which mode to start in by setting production-mode"
+    echo "or development-mode in extraArguments."
+    exit 1
+  fi
+
+configFile: |-
+  import ldap
+  from flask_appbuilder.security.manager import AUTH_OID, AUTH_REMOTE_USER, AUTH_DB, AUTH_LDAP, AUTH_OAUTH, AUTH_OAUTH
+  import os
+  ROW_LIMIT = 500000
+  ENABLE_CORS = True
+  ALERT_REPORTS = True
+  ENABLE_PROXY_FIX = True
+  HTTP_HEADERS = {}
+  SQLALCHEMY_DATABASE_URI = 'postgresql+psycopg2://superset:dubl1n@10.48.44.220:5434/superset'
+  #SQLALCHEMY_DATABASE_URI = 'sqlite:////superset/superset.db'
+  WEBSERVER_THREADS = 16
+  SUPERSET_WEBSERVER_PORT = 8088
+  SUPERSET_WEBSERVER_TIMEOUT = 500
+  CSRF_ENABLED = True
+  DEBUG = True
+  AUTH_USER_REGISTRATION = True
+  AUTH_USER_REGISTRATION_ROLE = "Gamma-dsi"
+  LOG_LEVEL = 'DEBUG'
+  DEFAULT_RELATIVE_START_TIME = "now"
+  DEFAULT_RELATIVE_END_TIME = "now"
+  AUTH_LDAP_ALLOW_SELF_SIGNED = True
+  AUTH_TYPE = 2
+  #AUTH_LDAP_TLS_CACERTDIR = '$SUPERSET_HOME'
+  #AUTH_LDAP_TLS_CACERTFILE = 'optumroot.pem'
+  AUTH_LDAP_TLS_DEMAND = False
+  AUTH_LDAP_SERVER = "ldap://ad-ldap-prod.uhc.com:389"
+  AUTH_LDAP_BIND_USER = 'cn=dsi_superset,cn=Users,DC=ms,DC=ds,DC=uhc,DC=com'
+  AUTH_LDAP_BIND_PASSWORD = os.environ.get("LDAP_BIND_PASSWORD")
+  AUTH_LDAP_UID_FIELD = "sAMAccountName"
+  AUTH_LDAP_SEARCH = "DC=ms,DC=ds,DC=uhc,DC=com"
+  AUTH_LDAP_SEARCH_FILTER = "(memberof=CN=dap_users_prd,cn=Users,DC=ms,DC=ds,DC=uhc,DC=com)"
+  CACHE_CONFIG = {
+   'CACHE_TYPE': 'redis',
+   'CACHE_DEFAULT_TIMEOUT': 60 * 60 * 24,
+   'CACHE_DEFAULT_TIMEOUT': 30,
+   'CACHE_KEY_PREFIX': 'superset_results',
+   'CACHE_REDIS_URL': 'redis://127.0.0.1:6379/0',
+  }
+
+
+
+# Set this API key to enable Mapbox visualizations
+
+## Extra confiuguration files and their content to be made available next to the config file
+extraConfigFiles: {}
+  ## custom_sso_security_manager.py: |-
+  ##   from superset.security import SupersetSecurityManager
+  ##   ...
+
+## Extra environment variables that will be passed onto deployment pod
+##
+extraEnv: {}
+
+## Extra arguments that will be passed to init_superset.sh
+## For the sample initFile this is development-mode or production-mode
+extraArguments:
+- production-mode
+
+## The name of a secret in the same kubernetes namespace which contain values to be added to the environment
+## This can be useful for secret keys, etc
+##
+extraEnvFromSecret: dsi-superset-ldapbind
+
+## Deployment level annotations
+## Useful for passing other third party annotations to interact with eg. kube2iam.
+deploymentAnnotations: {}
+
+persistence:
+
+  ## If true, superset server will create/use a Persistent Volume Claim
+    ## If false, use emptyDir
+    ##
+  enabled: false
+
+  ## superset data Persistent Volume access modes
+  ## Must match those of existing PV or dynamic provisioner
+  ## Ref: http://kubernetes.io/docs/user-guide/persistent-volumes/
+  ##
+  accessModes:
+    - ReadWriteOnce
+
+  ## superset data Persistent Volume size
+  ##
+  ## size: 8Gi
+
+  ## superset server data Persistent Volume Storage Class
+  ## If defined, storageClassName: <storageClass>
+  ## If set to "-", storageClassName: "", which disables dynamic provisioning
+  ## If undefined (the default) or set to null, no storageClassName spec is
+  ##   set, choosing the default provisioner.  (gp2 on AWS, standard on
+  ##   GKE, AWS & OpenStack)
+  ##
+  ##  storageClass: "nas-thin-2"
+
+  ## Superset data Persistent Volume existing claim name
+  ## Requires server.persistence.enabled: true
+  ## If defined, PVC must be created manually before volume will be bound
+  existingClaim: ""
+
+## Expose the superset service to be accessed from outside the cluster (LoadBalancer service).
+## or access it from within the cluster (ClusterIP service). Set the service type and the port to serve it.
+## ref: http://kubernetes.io/docs/user-guide/services/
+##
+service:
+  type: ClusterIP
+  port: 8088
+  targetPort: 8088
+
+
+  ## service annotations
+  annotations: {}
+    # service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+    # external-dns.alpha.kubernetes.io/hostname: "superset.domain.com"
+
+  ## loadbalancer source ranges. only used when service.type is "LoadBalancer"
+  loadBalancerSourceRanges: []
+  # - 172.31.0.0/16
+
+
+ingress:
+  ## If true, superset Ingress will be created
+  ##
+  enabled: false
+
+  ## superset Ingress annotations
+  annotations: {}
+  kubernetes.io/ingress.class: nginx
+  # kubernetes.io/tls-acme: 'true'
+
+  ## superset Ingress hostnames
+  ## Must be provided if Ingress is enabled
+  ##
+  hosts:
+    - dsi-presto-analytics.optum.com
+
+  ## superset Ingress path
+  ## Optional, allows specifying paths for more flexibility
+  ## E.g. Traefik ingress likes paths
+  ##
+  path: /
+
+  ## superset Ingress TLS configuration
+  ## Secrets must be manually created in the namespace
+  ##
+  tls: []
+      #hosts:
+      #   - dsi-presto-analytics.optum.com
+    #- secretName: dsi-presto-analytics-optum-com
+
+## Node labels for pod assignment
+## Ref: https://kubernetes.io/docs/user-guide/node-selection/
+##
+nodeSelector: {}
+
+## Tolerations
+## ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#taints-and-tolerations-beta-feature
+tolerations: []
+
+## Affinity and anti-affinity
+## ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/#affinity-and-anti-affinity
+affinity: {}
+
+## Configure resource requests and limits
+## ref: http://kubernetes.io/docs/user-guide/compute-resources/
+##
+resources:
+  requests:
+    cpu: 50m
+    memory: 500Mi
+  limits:
+    cpu: 2000m
+    memory: 16Gi
+
+## Configure liveness/readiness params
+## ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-probes/
+##
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 100
+  timeoutSeconds: 5
+  periodSeconds: 10
+  failureThreshold: 2
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 100
+  timeoutSeconds: 5
+  periodSeconds: 10
+  failureThreshold: 2
+
+networkPolicy:
+  enabled: true
